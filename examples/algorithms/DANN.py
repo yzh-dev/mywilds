@@ -43,6 +43,7 @@ class DANN(SingleModelAlgorithm):
             classifier_lr=config.dann_classifier_lr,
             discriminator_lr=config.dann_discriminator_lr,
         )
+        # 损失函数解释：参考P41 ⭐⭐⭐_22ILCR Extending the WILDS Benchmark for Unsupervised Adaptation.pdf
         self.optimizer = initialize_optimizer_with_model_params(config, parameters_to_optimize)
         self.domain_loss = initialize_loss('cross_entropy', config)
 

@@ -10,6 +10,7 @@ import copy
 from utils import load, move_to, detach_and_clone, collate_list, concat_input
 
 
+
 class PseudoLabel(SingleModelAlgorithm):
     """
     PseudoLabel.

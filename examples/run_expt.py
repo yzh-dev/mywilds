@@ -18,7 +18,8 @@ from wilds.common.data_loaders import get_train_loader, get_eval_loader
 from wilds.common.grouper import CombinatorialGrouper
 from wilds.datasets.unlabeled.wilds_unlabeled_dataset import WILDSPseudolabeledSubset
 
-from utils import set_seed, Logger, BatchLogger, log_config, ParseKwargs, load, initialize_wandb, log_group_data, parse_bool, get_model_prefix, move_to
+from utils import set_seed, Logger, BatchLogger, log_config, ParseKwargs, load, initialize_wandb, log_group_data, \
+    parse_bool, get_model_prefix, move_to
 from train import train, evaluate, infer_predictions
 from algorithms.initializer import initialize_algorithm, infer_d_out
 from transforms import initialize_transform
@@ -30,21 +31,29 @@ import torch.multiprocessing
 
 # Necessary for large images of GlobalWheat
 from PIL import ImageFile
+
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+# RuntimeError: Unable to find a valid cuDNN algorithm to run convolution
+# https://deepinout.com/pytorch/pytorch-questions/94_pytorch_unable_to_find_a_valid_cudnn_algorithm_to_run_convolution.html
+# 启用Pytorch的自动卷积算法选择机制，它将根据运行时的硬件和数据情况自动选择最佳的卷积算法。
+torch.backends.cudnn.benchmark = True
+
+
+
 def main():
-    
     ''' Arg defaults are filled in according to examples/configs/ '''
     parser = argparse.ArgumentParser()
 
     # Required arguments
-    parser.add_argument('-d', '--dataset', choices=wilds.supported_datasets, required=True)
-    parser.add_argument('--algorithm', required=True, choices=supported.algorithms)
-    parser.add_argument('--root_dir', required=True,
+    parser.add_argument('-d', '--dataset', default="iwildcam", choices=wilds.supported_datasets)
+    parser.add_argument('--algorithm', default="ERM", choices=supported.algorithms)
+    parser.add_argument('--root_dir', default="D:\ML\Dataset\iwildcamDataset",
                         help='The directory where [dataset]/data can be found (or should be downloaded to, if it does not exist).')
 
     # Dataset
-    parser.add_argument('--split_scheme', help='Identifies how the train/val/test split is constructed. Choices are dataset-specific.')
+    parser.add_argument('--split_scheme',
+                        help='Identifies how the train/val/test split is constructed. Choices are dataset-specific.')
     parser.add_argument('--dataset_kwargs', nargs='*', action=ParseKwargs, default={},
                         help='keyword arguments for dataset initialization passed as key1=value1 key2=value2')
     parser.add_argument('--download', default=False, type=parse_bool, const=True, nargs='?',
@@ -54,40 +63,51 @@ def main():
     parser.add_argument('--version', default=None, type=str, help='WILDS labeled dataset version number.')
 
     # Unlabeled Dataset
-    parser.add_argument('--unlabeled_split', default=None, type=str, choices=wilds.unlabeled_splits,  help='Unlabeled split to use. Some datasets only have some splits available.')
+    # 默认不采用无标签数据集
+    parser.add_argument('--unlabeled_split', default=None, type=str, choices=wilds.unlabeled_splits,
+                        help='Unlabeled split to use. Some datasets only have some splits available.')
     parser.add_argument('--unlabeled_version', default=None, type=str, help='WILDS unlabeled dataset version number.')
-    parser.add_argument('--use_unlabeled_y', default=False, type=parse_bool, const=True, nargs='?', 
+    parser.add_argument('--use_unlabeled_y', default=False, type=parse_bool, const=True, nargs='?',
                         help='If true, unlabeled loaders will also the true labels for the unlabeled data. This is only available for some datasets. Used for "fully-labeled ERM experiments" in the paper. Correct functionality relies on CrossEntropyLoss using ignore_index=-100.')
 
     # Loaders
     parser.add_argument('--loader_kwargs', nargs='*', action=ParseKwargs, default={})
     parser.add_argument('--unlabeled_loader_kwargs', nargs='*', action=ParseKwargs, default={})
     parser.add_argument('--train_loader', choices=['standard', 'group'])
-    parser.add_argument('--uniform_over_groups', type=parse_bool, const=True, nargs='?', help='If true, sample examples such that batches are uniform over groups.')
-    parser.add_argument('--distinct_groups', type=parse_bool, const=True, nargs='?', help='If true, enforce groups sampled per batch are distinct.')
+    parser.add_argument('--uniform_over_groups', type=parse_bool, const=True, nargs='?',
+                        help='If true, sample examples such that batches are uniform over groups.')
+    parser.add_argument('--distinct_groups', type=parse_bool, const=True, nargs='?',
+                        help='If true, enforce groups sampled per batch are distinct.')
     parser.add_argument('--n_groups_per_batch', type=int)
     parser.add_argument('--unlabeled_n_groups_per_batch', type=int)
-    parser.add_argument('--batch_size', type=int)
+    parser.add_argument('--batch_size',default=8, type=int)
     parser.add_argument('--unlabeled_batch_size', type=int)
     parser.add_argument('--eval_loader', choices=['standard'], default='standard')
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=1, help='Number of batches to process before stepping optimizer and schedulers. If > 1, we simulate having a larger effective batch size (though batchnorm behaves differently).')
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
+                        help='Number of batches to process before stepping optimizer and schedulers. If > 1, we simulate having a larger effective batch size (though batchnorm behaves differently).')
 
     # Model
     parser.add_argument('--model', choices=supported.models)
     parser.add_argument('--model_kwargs', nargs='*', action=ParseKwargs, default={},
                         help='keyword arguments for model initialization passed as key1=value1 key2=value2')
-    parser.add_argument('--noisystudent_add_dropout', type=parse_bool, const=True, nargs='?', help='If true, adds a dropout layer to the student model of NoisyStudent.')
+    parser.add_argument('--noisystudent_add_dropout', type=parse_bool, const=True, nargs='?',
+                        help='If true, adds a dropout layer to the student model of NoisyStudent.')
     parser.add_argument('--noisystudent_dropout_rate', type=float)
-    parser.add_argument('--pretrained_model_path', default=None, type=str, help='Specify a path to pretrained model weights')
-    parser.add_argument('--load_featurizer_only', default=False, type=parse_bool, const=True, nargs='?', help='If true, only loads the featurizer weights and not the classifier weights.')
+    parser.add_argument('--pretrained_model_path', default=None, type=str,
+                        help='Specify a path to pretrained model weights')
+    parser.add_argument('--load_featurizer_only', default=False, type=parse_bool, const=True, nargs='?',
+                        help='If true, only loads the featurizer weights and not the classifier weights.')
 
     # NoisyStudent-specific loading
-    parser.add_argument('--teacher_model_path', type=str, help='Path to NoisyStudent teacher model weights. If this is defined, pseudolabels will first be computed for unlabeled data before anything else runs.')
+    parser.add_argument('--teacher_model_path', type=str,
+                        help='Path to NoisyStudent teacher model weights. If this is defined, pseudolabels will first be computed for unlabeled data before anything else runs.')
 
     # Transforms
     parser.add_argument('--transform', choices=supported.transforms)
-    parser.add_argument('--additional_train_transform', choices=supported.additional_transforms, help='Optional data augmentations to layer on top of the default transforms.')
-    parser.add_argument('--target_resolution', nargs='+', type=int, help='The input resolution that images will be resized to before being passed into the model. For example, use --target_resolution 224 224 for a standard ResNet.')
+    parser.add_argument('--additional_train_transform', choices=supported.additional_transforms,
+                        help='Optional data augmentations to layer on top of the default transforms.')
+    parser.add_argument('--target_resolution', nargs='+', type=int,
+                        help='The input resolution that images will be resized to before being passed into the model. For example, use --target_resolution 224 224 for a standard ResNet.')
     parser.add_argument('--resize_scale', type=float)
     parser.add_argument('--max_token_length', type=int)
     parser.add_argument('--randaugment_n', type=int, help='Number of RandAugment transformations to apply.')
@@ -113,7 +133,8 @@ def main():
     parser.add_argument('--irm_penalty_anneal_iters', type=int)
     parser.add_argument('--self_training_lambda', type=float)
     parser.add_argument('--self_training_threshold', type=float)
-    parser.add_argument('--pseudolabel_T2', type=float, help='Percentage of total iterations at which to end linear scheduling and hold lambda at the max value')
+    parser.add_argument('--pseudolabel_T2', type=float,
+                        help='Percentage of total iterations at which to end linear scheduling and hold lambda at the max value')
     parser.add_argument('--soft_pseudolabels', default=False, type=parse_bool, const=True, nargs='?')
     parser.add_argument('--algo_log_metric')
     parser.add_argument('--process_pseudolabels_function', choices=supported.process_pseudolabels_functions)
@@ -139,11 +160,12 @@ def main():
     parser.add_argument('--scheduler_metric_name')
 
     # Evaluation
-    parser.add_argument('--process_outputs_function', choices = supported.process_outputs_functions)
+    parser.add_argument('--process_outputs_function', choices=supported.process_outputs_functions)
     parser.add_argument('--evaluate_all_splits', type=parse_bool, const=True, nargs='?', default=True)
     parser.add_argument('--eval_splits', nargs='+', default=[])
     parser.add_argument('--eval_only', type=parse_bool, const=True, nargs='?', default=False)
-    parser.add_argument('--eval_epoch', default=None, type=int, help='If eval_only is set, then eval_epoch allows you to specify evaluating at a particular epoch. By default, it evaluates the best epoch by validation performance.')
+    parser.add_argument('--eval_epoch', default=None, type=int,
+                        help='If eval_only is set, then eval_epoch allows you to specify evaluating at a particular epoch. By default, it evaluates the best epoch by validation performance.')
 
     # Misc
     parser.add_argument('--device', type=int, nargs='+', default=[0])
@@ -156,7 +178,8 @@ def main():
     parser.add_argument('--save_pred', type=parse_bool, const=True, nargs='?', default=True)
     parser.add_argument('--no_group_logging', type=parse_bool, const=True, nargs='?')
     parser.add_argument('--progress_bar', type=parse_bool, const=True, nargs='?', default=False)
-    parser.add_argument('--resume', type=parse_bool, const=True, nargs='?', default=False, help='Whether to resume from the most recent saved model in the current log_dir.')
+    parser.add_argument('--resume', type=parse_bool, const=True, nargs='?', default=False,
+                        help='Whether to resume from the most recent saved model in the current log_dir.')
 
     # Weights & Biases
     parser.add_argument('--use_wandb', type=parse_bool, const=True, nargs='?', default=False)
@@ -190,14 +213,14 @@ def main():
 
     # Initialize logs
     if os.path.exists(config.log_dir) and config.resume:
-        resume=True
-        mode='a'
+        resume = True
+        mode = 'a'
     elif os.path.exists(config.log_dir) and config.eval_only:
-        resume=False
-        mode='a'
+        resume = False
+        mode = 'a'
     else:
-        resume=False
-        mode='w'
+        resume = False
+        mode = 'w'
 
     if not os.path.exists(config.log_dir):
         os.makedirs(config.log_dir)
@@ -270,7 +293,7 @@ def main():
             if not config.teacher_model_path.endswith(".pth"):
                 # Use the best model
                 config.teacher_model_path = os.path.join(
-                    config.teacher_model_path,  f"{config.dataset}_seed:{config.seed}_epoch:best_model.pth"
+                    config.teacher_model_path, f"{config.dataset}_seed:{config.seed}_epoch:best_model.pth"
                 )
 
             d_out = infer_d_out(full_dataset, config)
@@ -284,7 +307,8 @@ def main():
                 is_training=True,
                 additional_transform_name="weak"
             )
-            unlabeled_split_dataset = full_unlabeled_dataset.get_subset(split, transform=weak_transform, frac=config.frac)
+            unlabeled_split_dataset = full_unlabeled_dataset.get_subset(split, transform=weak_transform,
+                                                                        frac=config.frac)
             sequential_loader = get_eval_loader(
                 loader=config.eval_loader,
                 dataset=unlabeled_split_dataset,
@@ -304,9 +328,9 @@ def main():
             del teacher_model
         else:
             unlabeled_split_dataset = full_unlabeled_dataset.get_subset(
-                split, 
-                transform=unlabeled_train_transform, 
-                frac=config.frac, 
+                split,
+                transform=unlabeled_train_transform,
+                frac=config.frac,
                 load_y=config.use_unlabeled_y
             )
 
@@ -334,7 +358,7 @@ def main():
     # Configure labeled torch datasets (WILDS dataset splits)
     datasets = defaultdict(dict)
     for split in full_dataset.split_dict.keys():
-        if split=='train':
+        if split == 'train':
             transform = train_transform
             verbose = True
         elif split == 'val':
@@ -385,7 +409,7 @@ def main():
 
     # Logging dataset info
     # Show class breakdown if feasible
-    if config.no_group_logging and full_dataset.is_classification and full_dataset.y_size==1 and full_dataset.n_classes <= 10:
+    if config.no_group_logging and full_dataset.is_classification and full_dataset.y_size == 1 and full_dataset.n_classes <= 10:
         log_grouper = CombinatorialGrouper(
             dataset=full_dataset,
             groupby_fields=['y'])
@@ -426,15 +450,16 @@ def main():
             except FileNotFoundError:
                 pass
         if resume_success == False:
-            epoch_offset=0
-            best_val_metric=None
+            epoch_offset = 0
+            best_val_metric = None
 
         # Log effective batch size
         if config.gradient_accumulation_steps > 1:
             logger.write(
                 (f'\nUsing gradient_accumulation_steps {config.gradient_accumulation_steps} means that')
                 + (f' the effective labeled batch size is {config.batch_size * config.gradient_accumulation_steps}')
-                + (f' and the effective unlabeled batch size is {config.unlabeled_batch_size * config.gradient_accumulation_steps}' 
+                + (
+                    f' and the effective unlabeled batch size is {config.unlabeled_batch_size * config.gradient_accumulation_steps}'
                     if unlabeled_dataset and config.unlabeled_batch_size else '')
                 + ('. Updates behave as if torch loaders have drop_last=False\n')
             )
@@ -452,7 +477,7 @@ def main():
         if config.eval_epoch is None:
             eval_model_path = model_prefix + 'epoch:best_model.pth'
         else:
-            eval_model_path = model_prefix +  f'epoch:{config.eval_epoch}_model.pth'
+            eval_model_path = model_prefix + f'epoch:{config.eval_epoch}_model.pth'
         best_epoch, best_val_metric = load(algorithm, eval_model_path, device=config.device)
         if config.eval_epoch is None:
             epoch = best_epoch
@@ -475,5 +500,6 @@ def main():
         datasets[split]['eval_logger'].close()
         datasets[split]['algo_logger'].close()
 
-if __name__=='__main__':
+
+if __name__ == '__main__':
     main()

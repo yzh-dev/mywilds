@@ -52,6 +52,8 @@ class DeepCORAL(SingleModelAlgorithm):
         self.featurizer = featurizer
         self.classifier = classifier
 
+    #     损失函数解释：参考P40 ⭐⭐⭐_22ILCR Extending the WILDS Benchmark for Unsupervised Adaptation.pdf
+
     def coral_penalty(self, x, y):
         if x.dim() > 2:
             # featurizers output Tensors of size (batch_size, ..., feature dimensionality).

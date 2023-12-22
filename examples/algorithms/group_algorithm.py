@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import torch, time
 import numpy as np
 from algorithms.algorithm import Algorithm
@@ -18,7 +19,7 @@ class GroupAlgorithm(Algorithm):
             - logged_metrics (list of Metric):
             - logged_fields (list of str):
         """
-        super().__init__(device)
+        super().__init__(device)#调用父类的__init__函数初始化device
         self.grouper = grouper
         self.group_prefix = 'group_'
         self.count_field = 'count'

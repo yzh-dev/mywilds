@@ -207,7 +207,7 @@ def initialize_torchvision_model(name, d_out, **kwargs):
     # adjust the last layer
     d_features = getattr(model, last_layer_name).in_features
     if d_out is None:  # want to initialize a featurizer model
-        last_layer = Identity(d_features)
+        last_layer = Identity(d_features)#添加一个恒等映射，输入和输出完全一样
         model.d_out = d_features
     else: # want to initialize a classifier for a particular num_classes
         last_layer = nn.Linear(d_features, d_out)

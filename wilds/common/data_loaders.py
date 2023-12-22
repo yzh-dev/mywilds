@@ -26,7 +26,7 @@ def get_train_loader(loader, dataset, batch_size,
         - data loader (DataLoader): Data loader.
     """
     if loader == 'standard':
-        if uniform_over_groups is None or not uniform_over_groups:
+        if uniform_over_groups is None or not uniform_over_groups:#不是每组内均匀采样，直接打乱采样
             return DataLoader(
                 dataset,
                 shuffle=True, # Shuffle training dataset
@@ -34,15 +34,15 @@ def get_train_loader(loader, dataset, batch_size,
                 collate_fn=dataset.collate,
                 batch_size=batch_size,
                 **loader_kwargs)
-        else:
+        else:#uniform_over_groups为True时，组内元素越多，则采样权重越小，使得每组内的采样元素数量大致相同
             assert grouper is not None
             groups, group_counts = grouper.metadata_to_group(
                 dataset.metadata_array,
                 return_counts=True)
-            group_weights = 1 / group_counts
+            group_weights = 1 / group_counts#计算组内采样权重
             weights = group_weights[groups]
 
-            # Replacement needs to be set to True, otherwise we'll run out of minority samples
+            # 进行加权随机化采样
             sampler = WeightedRandomSampler(weights, len(dataset), replacement=True)
             return DataLoader(
                 dataset,
@@ -51,7 +51,7 @@ def get_train_loader(loader, dataset, batch_size,
                 collate_fn=dataset.collate,
                 batch_size=batch_size,
                 **loader_kwargs)
-
+    # 先采样n_groups_per_batch个groups，然后在这些groups中采样样本
     elif loader == 'group':
         if uniform_over_groups is None:
             uniform_over_groups = True
@@ -61,7 +61,7 @@ def get_train_loader(loader, dataset, batch_size,
             raise ValueError(f'n_groups_per_batch was set to {n_groups_per_batch} but there are only {grouper.n_groups} groups specified.')
 
         group_ids = grouper.metadata_to_group(dataset.metadata_array)
-        batch_sampler = GroupSampler(
+        batch_sampler = GroupSampler(#'group'方式采样训练样本
             group_ids=group_ids,
             batch_size=batch_size,
             n_groups_per_batch=n_groups_per_batch,
@@ -95,7 +95,7 @@ def get_eval_loader(loader, dataset, batch_size, grouper=None, **loader_kwargs):
             collate_fn=dataset.collate,
             batch_size=batch_size,
             **loader_kwargs)
-
+# 先采样n_groups_per_batch个groups，然后在这些groups中采样样本
 class GroupSampler:
     """
         Constructs batches by first sampling groups,

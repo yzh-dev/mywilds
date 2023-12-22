@@ -6,6 +6,12 @@ import torch.autograd as autograd
 from wilds.common.metrics.metric import ElementwiseMetric, MultiTaskMetric
 from optimizer import initialize_optimizer
 
+# https://zhuanlan.zhihu.com/p/610193980
+# 参考IRM解读： https://zhuanlan.zhihu.com/p/567666715
+# https://www.bilibili.com/video/av672261281/?vd_source=7513a20a98ab0669201d1cdf2385f78b
+
+# Youtube:https://www.youtube.com/watch?v=M0S2psU1DfA
+# IRM requires the feature representation to be invariant in all domains
 class IRM(SingleModelAlgorithm):
     """
     Invariant risk minimization.

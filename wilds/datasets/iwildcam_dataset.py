@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from datetime import datetime
 from pathlib import Path
 import os
@@ -52,7 +53,7 @@ class IWildCamDataset(WILDSDataset):
         if self._split_scheme != 'official':
             raise ValueError(f'Split scheme {self._split_scheme} not recognized')
 
-        # path
+        # 下载数据集
         self._data_dir = Path(self.initialize_data_dir(root_dir, download))
 
         # Load splits
@@ -67,21 +68,21 @@ class IWildCamDataset(WILDSDataset):
         df['split_id'] = df['split'].apply(lambda x: self._split_dict[x])
         self._split_array = df['split_id'].values
 
-        # Filenames
+        # 文件名
         self._input_array = df['filename'].values
 
-        # Labels
+        # 标签
         self._y_array = torch.tensor(df['y'].values)
         self._n_classes = max(df['y']) + 1
         self._y_size = 1
         assert len(np.unique(df['y'])) == self._n_classes
 
-        # Location/group info
+        # 拍摄地点location
         n_groups = max(df['location_remapped']) + 1
         self._n_groups = n_groups
         assert len(np.unique(df['location_remapped'])) == self._n_groups
 
-        # Sequence info
+        # 同一个地点的拍摄序列sequence（间隔约为1秒）
         n_sequences = max(df['sequence_remapped']) + 1
         self._n_sequences = n_sequences
         assert len(np.unique(df['sequence_remapped'])) == self._n_sequences
@@ -94,7 +95,7 @@ class IWildCamDataset(WILDSDataset):
         df['hour'] = df['datetime_obj'].apply(lambda x: int(x.hour))
         df['minute'] = df['datetime_obj'].apply(lambda x: int(x.minute))
         df['second'] = df['datetime_obj'].apply(lambda x: int(x.second))
-
+        # 地点、序列、年月日时分秒、标签共9个元素
         self._metadata_array = torch.tensor(np.stack([df['location_remapped'].values,
                             df['sequence_remapped'].values,
                             df['year'].values, df['month'].values, df['day'].values,
@@ -102,11 +103,12 @@ class IWildCamDataset(WILDSDataset):
                             self.y_array], axis=1))
         self._metadata_fields = ['location', 'sequence', 'year', 'month', 'day', 'hour', 'minute', 'second', 'y']
 
-        # eval grouper
+        # 按照地点分组，然后用于评估
         self._eval_grouper = CombinatorialGrouper(
             dataset=self,
             groupby_fields=(['location']))
 
+        # 调用父类WILDSDataset的初始化函数
         super().__init__(root_dir, download, split_scheme)
 
     def eval(self, y_pred, y_true, metadata, prediction_fn=None):
@@ -124,7 +126,7 @@ class IWildCamDataset(WILDSDataset):
             - results_str (str): String summarizing the evaluation metrics
         """
         metrics = [
-            Accuracy(prediction_fn=prediction_fn),
+            Accuracy(prediction_fn=prediction_fn),#准确度评估指标：逐元素计算预测值与真实值是否相等，然后取平均值
             Recall(prediction_fn=prediction_fn, average='macro'),
             F1(prediction_fn=prediction_fn, average='macro'),
         ]

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 from wilds.common.utils import avg_over_groups, get_counts, numel
 import torch

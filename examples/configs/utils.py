@@ -5,6 +5,7 @@ from configs.scheduler import scheduler_defaults
 from configs.data_loader import loader_defaults
 from configs.datasets import dataset_defaults, split_defaults
 
+
 def populate_defaults(config):
     """Populates hyperparameters with defaults implied by choices
     of other hyperparameters."""
@@ -17,7 +18,8 @@ def populate_defaults(config):
     if config.use_unlabeled_y:
         assert config.algorithm == 'ERM', 'Only ERM is currently supported for training on the true labels of unlabeled data.'
         assert config.unlabeled_split is not None, 'Specify an unlabeled split'
-        assert config.dataset in ['amazon', 'civilcomments', 'fmow', 'iwildcam'], 'The unlabeled data in this dataset are truly unlabeled, and we do not have true labels for them.'
+        assert config.dataset in ['amazon', 'civilcomments', 'fmow',
+                                  'iwildcam'], 'The unlabeled data in this dataset are truly unlabeled, and we do not have true labels for them.'
 
     # Validations
     if config.groupby_fields == ['from_source_domain']:
@@ -73,10 +75,10 @@ def populate_defaults(config):
                     f"is not supported for detection."
                 )
 
-    # implied defaults from choice of dataset
+    # 从数据集中推理出其默认配置
     config = populate_config(
         config,
-        dataset_defaults[config.dataset]
+        dataset_defaults[config.dataset]  # 数据集对应的默认配置
     )
 
     # implied defaults from choice of split
@@ -86,28 +88,19 @@ def populate_defaults(config):
             split_defaults[config.dataset][config.split_scheme]
         )
 
-    # implied defaults from choice of algorithm
-    config = populate_config(
-        config,
-        algorithm_defaults[config.algorithm]
-    )
+    # 算法默认参数，其中会指定train_loader，对应选项choices=['standard', 'group']
+    config = populate_config(config, algorithm_defaults[config.algorithm])
 
-    # implied defaults from choice of loader
-    config = populate_config(
-        config,
-        loader_defaults
-    )
-    # implied defaults from choice of model
-    if config.model: config = populate_config(
-        config,
-        model_defaults[config.model],
-    )
+    # dataloader默认参数
+    config = populate_config(config, loader_defaults)
 
-    # implied defaults from choice of scheduler
-    if config.scheduler: config = populate_config(
-        config,
-        scheduler_defaults[config.scheduler]
-    )
+    # 如果配置了模型，按照模型的默认参数进行配置
+    if config.model:
+        config = populate_config(config, model_defaults[config.model])
+
+    # lr学习率scheduler，默认没有设置
+    if config.scheduler:
+        config = populate_config(config, scheduler_defaults[config.scheduler])
 
     # misc implied defaults
     if config.groupby_fields is None:
@@ -118,7 +111,7 @@ def populate_defaults(config):
     required_fields = [
         'split_scheme', 'train_loader', 'uniform_over_groups', 'batch_size', 'eval_loader', 'model', 'loss_function',
         'val_metric', 'val_metric_decreasing', 'n_epochs', 'optimizer', 'lr', 'weight_decay',
-        ]
+    ]
     for field in required_fields:
         assert getattr(config, field) is not None, f"Must manually specify {field} for this setup."
 
@@ -128,9 +121,11 @@ def populate_defaults(config):
     # specified by the user (instead of populated as a default)
     if config.train_loader == 'standard':
         if orig_config.n_groups_per_batch is not None:
-            raise ValueError("n_groups_per_batch cannot be specified if the data loader is 'standard'. Consider using a 'group' data loader instead.")
+            raise ValueError(
+                "n_groups_per_batch cannot be specified if the data loader is 'standard'. Consider using a 'group' data loader instead.")
         if orig_config.distinct_groups is not None:
-            raise ValueError("distinct_groups cannot be specified if the data loader is 'standard'. Consider using a 'group' data loader instead.")
+            raise ValueError(
+                "distinct_groups cannot be specified if the data loader is 'standard'. Consider using a 'group' data loader instead.")
 
     return config
 
@@ -146,15 +141,15 @@ def populate_config(config, template: dict, force_compatibility=False):
     if template is None:
         return config
 
-    d_config = vars(config)
+    d_config = vars(config)  # 返回对象的属性和属性值的字典形式，下述代码中修改的是d_config
     for key, val in template.items():
-        if not isinstance(val, dict): # config[key] expected to be a non-index-able
-            if key not in d_config or d_config[key] is None:
+        if not isinstance(val, dict):  # config[key] expected to be a non-index-able
+            if key not in d_config or d_config[key] is None:  # 如果d_config中没有key或者key对应的值为None
                 d_config[key] = val
             elif d_config[key] != val and force_compatibility:
                 raise ValueError(f"Argument {key} must be set to {val}")
 
-        else: # config[key] expected to be a kwarg dict
+        else:  # config[key] expected to be a kwarg dict
             for kwargs_key, kwargs_val in val.items():
                 if kwargs_key not in d_config[key] or d_config[key][kwargs_key] is None:
                     d_config[key][kwargs_key] = kwargs_val

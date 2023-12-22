@@ -4,10 +4,12 @@ import torchvision.transforms as transforms
 from wilds.common.grouper import CombinatorialGrouper
 from wilds.common.data_loaders import get_eval_loader
 
-# Load the full dataset, and download it if necessary
-dataset = get_dataset(dataset="iwildcam", download=True, root_dir='D:\ML\Dataset\iwildcamDataset',
-                      split_scheme='official')
 # %%
+# Load the full dataset, and download it if necessary
+dataset = get_dataset(dataset="iwildcam",
+                      download=True,
+                      root_dir='D:\ML\Dataset\iwildcamDataset',
+                      split_scheme='official')  # 默认只能采用官方的划分方式：'train': 0, 'val': 1, 'test': 2, 'id_val': 3, 'id_test': 4
 # Get the training set
 train_data = dataset.get_subset(
     "train",
@@ -62,15 +64,16 @@ for test_batch in test_loader:
     x, y, metadata = test_batch
     break
 
+# %%
 # (Optional) Load unlabeled data
-# dataset = get_dataset(dataset="iwildcam", download=True, unlabeled=True, root_dir='D:\ML\Dataset\wildcamDataset', split_scheme='official')
-# unlabeled_data = dataset.get_subset(
-#     "test_unlabeled",
-#     transform=transforms.Compose(
-#         [transforms.Resize((448, 448)), transforms.ToTensor()]
-#     ),
-# )
-# unlabeled_loader = get_train_loader("standard", unlabeled_data, batch_size=16)
-# for unlabeled_batch in unlabeled_loader:
-#     x, metadata = unlabeled_batch
-#     break
+dataset = get_dataset(dataset="iwildcam", download=True, unlabeled=True, root_dir='D:\ML\Dataset\iwildcamDataset')
+unlabeled_data = dataset.get_subset(
+    "test_unlabeled",
+    transform=transforms.Compose(
+        [transforms.Resize((448, 448)), transforms.ToTensor()]
+    ),
+)
+unlabeled_loader = get_train_loader("standard", unlabeled_data, batch_size=16)
+for unlabeled_batch in unlabeled_loader:
+    x, metadata = unlabeled_batch
+    break

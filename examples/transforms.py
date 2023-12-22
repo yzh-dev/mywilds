@@ -31,7 +31,7 @@ def initialize_transform(
 
     # For images
     normalize = True
-    if transform_name == "image_base":
+    if transform_name == "image_base":#突出变换：调整尺寸
         transform_steps = get_image_base_transform_steps(config, dataset)
     elif transform_name == "image_resize":
         transform_steps = get_image_resize_transform_steps(
@@ -48,7 +48,7 @@ def initialize_transform(
         normalize = False
     else:
         raise ValueError(f"{transform_name} not recognized")
-
+    # 归一化
     default_normalization = transforms.Normalize(
         _DEFAULT_IMAGE_TENSOR_NORMALIZATION_MEAN,
         _DEFAULT_IMAGE_TENSOR_NORMALIZATION_STD,
@@ -77,7 +77,7 @@ def initialize_transform(
     else:
         if transform_name != "poverty":
             # The poverty data is already a tensor at this point
-            transform_steps.append(transforms.ToTensor())
+            transform_steps.append(transforms.ToTensor())#转化为tensor
         if normalize:
             transform_steps.append(default_normalization)
         transform = transforms.Compose(transform_steps)

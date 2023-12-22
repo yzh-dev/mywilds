@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import time
 import argparse
@@ -40,12 +41,11 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 torch.backends.cudnn.benchmark = True
 
 
-
 def main():
     ''' Arg defaults are filled in according to examples/configs/ '''
     parser = argparse.ArgumentParser()
 
-    # Required arguments
+    # 数据集名称、算法、数据所在根目录
     parser.add_argument('-d', '--dataset', default="iwildcam", choices=wilds.supported_datasets)
     parser.add_argument('--algorithm', default="ERM", choices=supported.algorithms)
     parser.add_argument('--root_dir', default="D:\ML\Dataset\iwildcamDataset",
@@ -58,12 +58,13 @@ def main():
                         help='keyword arguments for dataset initialization passed as key1=value1 key2=value2')
     parser.add_argument('--download', default=False, type=parse_bool, const=True, nargs='?',
                         help='If true, tries to download the dataset if it does not exist in root_dir.')
-    parser.add_argument('--frac', type=float, default=1.0,
+    # 默认1.0，调试阶段暂时将数据规模缩小到0.0005
+    parser.add_argument('--frac', type=float, default=0.001,
                         help='Convenience parameter that scales all dataset splits down to the specified fraction, for development purposes. Note that this also scales the test set down, so the reported numbers are not comparable with the full test set.')
     parser.add_argument('--version', default=None, type=str, help='WILDS labeled dataset version number.')
 
     # Unlabeled Dataset
-    # 默认不采用无标签数据集
+    # 默认不采用无标签数据集：None,Paper中WildCam数据集全部无标签样本都是extra_unlabeled
     parser.add_argument('--unlabeled_split', default=None, type=str, choices=wilds.unlabeled_splits,
                         help='Unlabeled split to use. Some datasets only have some splits available.')
     parser.add_argument('--unlabeled_version', default=None, type=str, help='WILDS unlabeled dataset version number.')
@@ -73,16 +74,20 @@ def main():
     # Loaders
     parser.add_argument('--loader_kwargs', nargs='*', action=ParseKwargs, default={})
     parser.add_argument('--unlabeled_loader_kwargs', nargs='*', action=ParseKwargs, default={})
-    parser.add_argument('--train_loader', choices=['standard', 'group'])
+    # train_loader默认采用standard，修改为group进行调试
+    parser.add_argument('--train_loader', default='standard', choices=['standard', 'group'])
+    # uniform_over_groups默认为None，修改为True，const=True是什么意思
     parser.add_argument('--uniform_over_groups', type=parse_bool, const=True, nargs='?',
                         help='If true, sample examples such that batches are uniform over groups.')
     parser.add_argument('--distinct_groups', type=parse_bool, const=True, nargs='?',
                         help='If true, enforce groups sampled per batch are distinct.')
     parser.add_argument('--n_groups_per_batch', type=int)
     parser.add_argument('--unlabeled_n_groups_per_batch', type=int)
-    parser.add_argument('--batch_size',default=8, type=int)
+    # batch_size默认等于，调整为8
+    parser.add_argument('--batch_size', default=8, type=int)
     parser.add_argument('--unlabeled_batch_size', type=int)
     parser.add_argument('--eval_loader', choices=['standard'], default='standard')
+    # gradient_accumulation_steps默认为1，表示每个batch都进行一次梯度更新
     parser.add_argument('--gradient_accumulation_steps', type=int, default=1,
                         help='Number of batches to process before stepping optimizer and schedulers. If > 1, we simulate having a larger effective batch size (though batchnorm behaves differently).')
 
@@ -144,7 +149,8 @@ def main():
     parser.add_argument('--val_metric_decreasing', type=parse_bool, const=True, nargs='?')
 
     # Optimization
-    parser.add_argument('--n_epochs', type=int)
+    # 对iwildcam数据，默认的n_epochs为12，修改为3
+    parser.add_argument('--n_epochs', default=3, type=int)
     parser.add_argument('--optimizer', choices=supported.optimizers)
     parser.add_argument('--lr', type=float)
     parser.add_argument('--weight_decay', type=float)
@@ -172,6 +178,7 @@ def main():
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--log_dir', default='./logs')
     parser.add_argument('--log_every', default=50, type=int)
+    # save_step参数：每隔多少个epoch保存一次模型，默认为None，即不保存
     parser.add_argument('--save_step', type=int)
     parser.add_argument('--save_best', type=parse_bool, const=True, nargs='?', default=True)
     parser.add_argument('--save_last', type=parse_bool, const=True, nargs='?', default=True)
@@ -188,16 +195,17 @@ def main():
     parser.add_argument('--wandb_kwargs', nargs='*', action=ParseKwargs, default={},
                         help='keyword arguments for wandb.init() passed as key1=value1 key2=value2')
 
+    # 解析输入参数
     config = parser.parse_args()
+    # 当用户不指定参数时，进行默认设置
     config = populate_defaults(config)
 
     # For the GlobalWheat detection dataset,
-    # we need to change the multiprocessing strategy or there will be
-    # too many open file descriptors.
+    # we need to change the multiprocessing strategy or there will be too many open file descriptors.
     if config.dataset == 'globalwheat':
         torch.multiprocessing.set_sharing_strategy('file_system')
 
-    # Set device
+    # 设置运行device
     if torch.cuda.is_available():
         device_count = torch.cuda.device_count()
         if len(config.device) > device_count:
@@ -211,28 +219,28 @@ def main():
         config.use_data_parallel = False
         config.device = torch.device("cpu")
 
-    # Initialize logs
-    if os.path.exists(config.log_dir) and config.resume:
+    # 初始化日志模式
+    if os.path.exists(config.log_dir) and config.resume:  # 恢复训练模式
         resume = True
         mode = 'a'
-    elif os.path.exists(config.log_dir) and config.eval_only:
+    elif os.path.exists(config.log_dir) and config.eval_only:  # 仅评估模式
         resume = False
         mode = 'a'
-    else:
+    else:  # 初始训练模式
         resume = False
         mode = 'w'
 
     if not os.path.exists(config.log_dir):
         os.makedirs(config.log_dir)
-    logger = Logger(os.path.join(config.log_dir, 'log.txt'), mode)
+    logger = Logger(os.path.join(config.log_dir, 'log.txt'), mode)  # 指定日志路径和模式）
 
-    # Record config
+    # console输出config参数
     log_config(config, logger)
 
-    # Set random seed
+    # 设置随机化种子seed
     set_seed(config.seed)
 
-    # Data
+    # 准备wildcam数据集，返回IWildCamDataset对象
     full_dataset = wilds.get_dataset(
         dataset=config.dataset,
         version=config.version,
@@ -246,7 +254,7 @@ def main():
     # If you want to use transforms that modify both `x` and `y`,
     # set `do_transform_y` to True when initializing the `WILDSSubset` below.
     train_transform = initialize_transform(
-        transform_name=config.transform,
+        transform_name=config.transform,  # 数据变换方式，支持的变换方式在supported.py中
         config=config,
         dataset=full_dataset,
         additional_transform_name=config.additional_train_transform,
@@ -350,12 +358,13 @@ def main():
             **config.unlabeled_loader_kwargs
         )
     else:
+        # 按照域划分数据集
         train_grouper = CombinatorialGrouper(
             dataset=full_dataset,
             groupby_fields=config.groupby_fields
         )
 
-    # Configure labeled torch datasets (WILDS dataset splits)
+    # Configure labeled torch datasets (WILDS dataset splits)官方已经将LabeledData划分好
     datasets = defaultdict(dict)
     for split in full_dataset.split_dict.keys():
         if split == 'train':
@@ -367,18 +376,18 @@ def main():
         else:
             transform = eval_transform
             verbose = False
-        # Get subset
+        # 获取指定数据集，并进行相应变换
         datasets[split]['dataset'] = full_dataset.get_subset(
             split,
             frac=config.frac,
             transform=transform)
-
+        # 获取对应的数据加载器dataloader
         if split == 'train':
             datasets[split]['loader'] = get_train_loader(
                 loader=config.train_loader,
                 dataset=datasets[split]['dataset'],
                 batch_size=config.batch_size,
-                uniform_over_groups=config.uniform_over_groups,
+                uniform_over_groups=config.uniform_over_groups,  # 每组均匀采样
                 grouper=train_grouper,
                 distinct_groups=config.distinct_groups,
                 n_groups_per_batch=config.n_groups_per_batch,
@@ -394,7 +403,7 @@ def main():
         # Set fields
         datasets[split]['split'] = split
         datasets[split]['name'] = full_dataset.split_names[split]
-        datasets[split]['verbose'] = verbose
+        datasets[split]['verbose'] = verbose#控制日志的详细程度
 
         # Loggers
         datasets[split]['eval_logger'] = BatchLogger(
@@ -417,11 +426,11 @@ def main():
         log_grouper = None
     else:
         log_grouper = train_grouper
-    log_group_data(datasets, log_grouper, logger)
+    log_group_data(datasets, log_grouper, logger)#输出'train', 'val', 'test', 'id_val', 'id_test'所含的元素数量
     if unlabeled_dataset is not None:
         log_group_data({"unlabeled": unlabeled_dataset}, log_grouper, logger)
 
-    # Initialize algorithm & load pretrained weights if provided
+    # 初始化算法（&载入pretrained weights if provided）
     algorithm = initialize_algorithm(
         config=config,
         datasets=datasets,
@@ -430,18 +439,18 @@ def main():
     )
 
     model_prefix = get_model_prefix(datasets['train'], config)
-    if not config.eval_only:
+    if not config.eval_only:  # 训练
         # Resume from most recent model in log_dir
         resume_success = False
-        if resume:
-            save_path = model_prefix + 'epoch:last_model.pth'
+        if resume:  # 如果是恢复训练
+            save_path = model_prefix + 'epoch_last_model.pth'
             if not os.path.exists(save_path):
                 epochs = [
-                    int(file.split('epoch:')[1].split('_')[0])
+                    int(file.split('epoch_')[1].split('_')[0])
                     for file in os.listdir(config.log_dir) if file.endswith('.pth')]
                 if len(epochs) > 0:
                     latest_epoch = max(epochs)
-                    save_path = model_prefix + f'epoch:{latest_epoch}_model.pth'
+                    save_path = model_prefix + f'epoch_{latest_epoch}_model.pth'
             try:
                 prev_epoch, best_val_metric = load(algorithm, save_path, device=config.device)
                 epoch_offset = prev_epoch + 1
@@ -464,20 +473,18 @@ def main():
                 + ('. Updates behave as if torch loaders have drop_last=False\n')
             )
 
-        train(
-            algorithm=algorithm,
+        train(algorithm=algorithm,
             datasets=datasets,
             general_logger=logger,
             config=config,
             epoch_offset=epoch_offset,
             best_val_metric=best_val_metric,
-            unlabeled_dataset=unlabeled_dataset,
-        )
+            unlabeled_dataset=unlabeled_dataset,)
     else:
         if config.eval_epoch is None:
-            eval_model_path = model_prefix + 'epoch:best_model.pth'
+            eval_model_path = model_prefix + 'epoch_best_model.pth'
         else:
-            eval_model_path = model_prefix + f'epoch:{config.eval_epoch}_model.pth'
+            eval_model_path = model_prefix + f'epoch_{config.eval_epoch}_model.pth'
         best_epoch, best_val_metric = load(algorithm, eval_model_path, device=config.device)
         if config.eval_epoch is None:
             epoch = best_epoch

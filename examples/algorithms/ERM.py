@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import torch
 from algorithms.single_model_algorithm import SingleModelAlgorithm
 from models.initializer import initialize_model
@@ -6,8 +7,9 @@ from utils import move_to
 class ERM(SingleModelAlgorithm):
     def __init__(self, config, d_out, grouper, loss,
             metric, n_train_steps):
+        # 初始化ERM模型
         model = initialize_model(config, d_out)
-        # initialize module
+        # 调用父类SingleModelAlgorithm的初始化函数
         super().__init__(
             config=config,
             model=model,
@@ -62,7 +64,7 @@ class ERM(SingleModelAlgorithm):
                 results['unlabeled_y_true'] = y
             results['unlabeled_g'] = self.grouper.metadata_to_group(metadata).to(self.device)
         return results
-
+    # 计算目标loss函数
     def objective(self, results):
         labeled_loss = self.loss.compute(results['y_pred'], results['y_true'], return_dict=False)
         if self.use_unlabeled_y and 'unlabeled_y_true' in results:

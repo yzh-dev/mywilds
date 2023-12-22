@@ -1,8 +1,10 @@
+# -*- coding: utf-8 -*-
 import os
 import time
 
 import torch
 import numpy as np
+
 
 class WILDSDataset:
     """
@@ -20,8 +22,8 @@ class WILDSDataset:
     def __init__(self, root_dir, download, split_scheme):
         if len(self._metadata_array.shape) == 1:
             self._metadata_array = self._metadata_array.unsqueeze(1)
-        self._add_coarse_domain_metadata()
-        self.check_init()
+        self._add_coarse_domain_metadata()  # 增加域“from_source_domain” （1或者0）
+        self.check_init()  # 检查数据集是否正确初始化
 
     def __len__(self):
         return len(self.y_array)
@@ -29,7 +31,7 @@ class WILDSDataset:
     def __getitem__(self, idx):
         # Any transformations are handled by the WILDSSubset
         # since different subsets (e.g., train vs test) might have different transforms
-        x = self.get_input(idx)
+        x = self.get_input(idx)  # 由子类具体实现
         y = self.y_array[idx]
         metadata = self.metadata_array[idx]
         return x, y, metadata
@@ -73,7 +75,7 @@ class WILDSDataset:
         split_idx = np.where(split_mask)[0]
 
         if frac < 1.0:
-            # Randomly sample a fraction of the split
+            # 随机获取frac比例的数据
             num_to_retain = int(np.round(float(len(split_idx)) * frac))
             split_idx = np.sort(np.random.permutation(split_idx)[:num_to_retain])
 
@@ -86,7 +88,7 @@ class WILDSDataset:
         if hasattr(self, '_metadata_map'):
             self._metadata_map['from_source_domain'] = [False, True]
         self._metadata_fields.append('from_source_domain')
-        from_source_domain = torch.as_tensor(
+        from_source_domain = torch.as_tensor(  # 如果是来自train
             [1 if split in self.source_domain_splits else 0 for split in self.split_array],
             dtype=torch.int64
         ).unsqueeze(dim=1)
@@ -112,7 +114,7 @@ class WILDSDataset:
                 f'{self.data_dir} does not exist yet. Please generate the dataset first.')
 
         # Check splits
-        assert self.split_dict.keys()==self.split_names.keys()
+        assert self.split_dict.keys() == self.split_names.keys()
         assert 'train' in self.split_dict
         assert 'val' in self.split_dict
 
@@ -142,7 +144,7 @@ class WILDSDataset:
             u_major, u_minor = tuple(map(int, u.split('.')))
             v_major, v_minor = tuple(map(int, v.split('.')))
             if (u_major > v_major) or (
-                (u_major == v_major) and (u_minor > v_minor)):
+                    (u_major == v_major) and (u_minor > v_minor)):
                 return True
             else:
                 return False
@@ -348,10 +350,10 @@ class WILDSDataset:
         # 2. From a third party (e.g. OGB-MolPCBA is downloaded through the OGB package)
         # Datasets downloaded from a third party need not have a download_url and RELEASE text file.
         return (
-            os.path.exists(data_dir) and (
+                os.path.exists(data_dir) and (
                 os.path.exists(version_file) or
                 (len(os.listdir(data_dir)) > 0 and download_url is None)
-            )
+        )
         )
 
     def download_dataset(self, data_dir, download_flag):
@@ -386,7 +388,8 @@ class WILDSDataset:
             download_time_in_minutes = (time.time() - start_time) / 60
             print(f"\nIt took {round(download_time_in_minutes, 2)} minutes to download and uncompress the dataset.\n")
         except Exception as e:
-            print(f"\n{os.path.join(data_dir, 'archive.tar.gz')} may be corrupted. Please try deleting it and rerunning this command.\n")
+            print(
+                f"\n{os.path.join(data_dir, 'archive.tar.gz')} may be corrupted. Please try deleting it and rerunning this command.\n")
             print(f"Exception: ", e)
 
     def check_version(self):
@@ -495,7 +498,7 @@ class WILDSSubset(WILDSDataset):
         self.do_transform_y = do_transform_y
 
     def __getitem__(self, idx):
-        x, y, metadata = self.dataset[self.indices[idx]]
+        x, y, metadata = self.dataset[self.indices[idx]]  # 调用父类WILDSDataset获取元素
         if self.transform is not None:
             if self.do_transform_y:
                 x, y = self.transform(x, y)

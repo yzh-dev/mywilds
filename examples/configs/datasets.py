@@ -236,12 +236,12 @@ dataset_defaults = {
         'target_resolution': (448, 448),
         'val_metric_decreasing': False,
         'algo_log_metric': 'accuracy',
-        'model': 'resnet50',
+        'model': 'resnet50',#默认采用Res50
         'lr': 3e-5,
         'weight_decay': 0.0,
         'batch_size': 16,
         'unlabeled_batch_size': 16,
-        'n_epochs': 12,
+        'n_epochs': 3,#默认训练12个epoch，修改为3个epoch加速训练
         'optimizer': 'Adam',
         'split_scheme': 'official',
         'scheduler': None,

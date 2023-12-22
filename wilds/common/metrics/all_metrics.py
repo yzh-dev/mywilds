@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import copy
 
 import numpy as np
@@ -159,7 +160,7 @@ def _mask_pseudolabels_detection(preds, confidence_threshold):
     pseudolabels_kept_frac = kept_boxes / total_boxes
     return preds, pseudolabels_kept_frac
 
-
+# Accuracy评估指标，按元素逐个计算
 class Accuracy(ElementwiseMetric):
     def __init__(self, prediction_fn=None, name=None):
         self.prediction_fn = prediction_fn
@@ -240,7 +241,7 @@ class Recall(Metric):
             name = f'recall'
             if average is not None:
                 name+=f'-{average}'
-        self.average = average
+        self.average = average#默认计算平均召回率
         super().__init__(name=name)
 
     def _compute(self, y_pred, y_true):

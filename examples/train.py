@@ -1,18 +1,21 @@
+# -*- coding: utf-8 -*-
 import copy
 import torch
 from tqdm import tqdm
 import math
 
 from configs.supported import process_outputs_functions, process_pseudolabels_functions
-from utils import save_model, save_pred, get_pred_prefix, get_model_prefix, collate_list, detach_and_clone, InfiniteDataIterator
+from utils import save_model, save_pred, get_pred_prefix, get_model_prefix, collate_list, detach_and_clone, \
+    InfiniteDataIterator
+
 
 def run_epoch(algorithm, dataset, general_logger, epoch, config, train, unlabeled_dataset=None):
     if dataset['verbose']:
         general_logger.write(f"\n{dataset['name']}:\n")
 
     if train:
-        algorithm.train()
-        torch.set_grad_enabled(True)
+        algorithm.train()#训练模式
+        torch.set_grad_enabled(True)  # Context-manager that sets gradient calculation to on or off
     else:
         algorithm.eval()
         torch.set_grad_enabled(False)
@@ -32,8 +35,8 @@ def run_epoch(algorithm, dataset, general_logger, epoch, config, train, unlabele
     batches = dataset['loader']
     if config.progress_bar:
         batches = tqdm(batches)
-    last_batch_idx = len(batches)-1
-    
+    last_batch_idx = len(batches) - 1
+
     if unlabeled_dataset:
         unlabeled_data_iterator = InfiniteDataIterator(unlabeled_dataset['loader'])
 
@@ -44,9 +47,11 @@ def run_epoch(algorithm, dataset, general_logger, epoch, config, train, unlabele
         if train:
             if unlabeled_dataset:
                 unlabeled_batch = next(unlabeled_data_iterator)
-                batch_results = algorithm.update(labeled_batch, unlabeled_batch, is_epoch_end=(batch_idx==last_batch_idx))
+                batch_results = algorithm.update(labeled_batch, unlabeled_batch,
+                                                 is_epoch_end=(batch_idx == last_batch_idx))
             else:
-                batch_results = algorithm.update(labeled_batch, is_epoch_end=(batch_idx==last_batch_idx))
+                # 执行算法的前向过程
+                batch_results = algorithm.update(labeled_batch, is_epoch_end=(batch_idx == last_batch_idx))
         else:
             batch_results = algorithm.evaluate(labeled_batch)
 
@@ -56,37 +61,37 @@ def run_epoch(algorithm, dataset, general_logger, epoch, config, train, unlabele
         # (they should already be detached in batch_results)
         epoch_y_true.append(detach_and_clone(batch_results['y_true']))
         y_pred = detach_and_clone(batch_results['y_pred'])
-        if config.process_outputs_function is not None:
+        if config.process_outputs_function is not None:#
             y_pred = process_outputs_functions[config.process_outputs_function](y_pred)
         epoch_y_pred.append(y_pred)
         epoch_metadata.append(detach_and_clone(batch_results['metadata']))
 
-        if train: 
+        if train:
             effective_batch_idx = (batch_idx + 1) / config.gradient_accumulation_steps
-        else: 
+        else:
             effective_batch_idx = batch_idx + 1
 
-        if train and effective_batch_idx % config.log_every==0:
+        if train and effective_batch_idx % config.log_every == 0:
             log_results(algorithm, dataset, general_logger, epoch, math.ceil(effective_batch_idx))
 
         batch_idx += 1
-
+    # 获取到一个epoch的所有预测数据
     epoch_y_pred = collate_list(epoch_y_pred)
     epoch_y_true = collate_list(epoch_y_true)
     epoch_metadata = collate_list(epoch_metadata)
-
+    # 计算预测数据的评价指标：如acc、recall、F1等
     results, results_str = dataset['dataset'].eval(
         epoch_y_pred,
         epoch_y_true,
         epoch_metadata)
 
-    if config.scheduler_metric_split==dataset['split']:
+    if config.scheduler_metric_split == dataset['split']:
         algorithm.step_schedulers(
             is_epoch=True,
             metrics=results,
             log_access=(not train))
 
-    # log after updating the scheduler in case it needs to access the internal logs
+    # 输出当前epoch的结果
     log_results(algorithm, dataset, general_logger, epoch, math.ceil(effective_batch_idx))
 
     results['epoch'] = epoch
@@ -110,10 +115,10 @@ def train(algorithm, datasets, general_logger, config, epoch_offset, best_val_me
     for epoch in range(epoch_offset, config.n_epochs):
         general_logger.write('\nEpoch [%d]:\n' % epoch)
 
-        # First run training
+        # 首先在'train'上训练
         run_epoch(algorithm, datasets['train'], general_logger, epoch, config, train=True, unlabeled_dataset=unlabeled_dataset)
 
-        # Then run val
+        # 然后观察'val(OOD)'上的表现
         val_results, y_pred = run_epoch(algorithm, datasets['val'], general_logger, epoch, config, train=False)
         curr_val_metric = val_results[config.val_metric]
         general_logger.write(f'Validation {config.val_metric}: {curr_val_metric:.3f}\n')
@@ -134,7 +139,7 @@ def train(algorithm, datasets, general_logger, config, epoch_offset, best_val_me
 
         # Then run everything else
         if config.evaluate_all_splits:
-            additional_splits = [split for split in datasets.keys() if split not in ['train','val']]
+            additional_splits = [split for split in datasets.keys() if split not in ['train', 'val']]
         else:
             additional_splits = config.eval_splits
         for split in additional_splits:
@@ -180,6 +185,7 @@ def evaluate(algorithm, datasets, epoch, general_logger, config, is_best):
         if split != 'train':
             save_pred_if_needed(epoch_y_pred, dataset, epoch, config, is_best, force_save=True)
 
+
 def infer_predictions(model, loader, config):
     """
     Simple inference loop that performs inference using a model (not algorithm) and returns model outputs.
@@ -191,7 +197,7 @@ def infer_predictions(model, loader, config):
     for batch in iterator:
         x = batch[0]
         x = x.to(config.device)
-        with torch.no_grad(): 
+        with torch.no_grad():
             output = model(x)
             if not config.soft_pseudolabels and config.process_pseudolabels_function is not None:
                 _, output, _, _ = process_pseudolabels_functions[config.process_pseudolabels_function](
@@ -207,6 +213,7 @@ def infer_predictions(model, loader, config):
 
     return torch.cat(y_pred, 0) if torch.is_tensor(y_pred[0]) else y_pred
 
+
 def log_results(algorithm, dataset, general_logger, epoch, effective_batch_idx):
     if algorithm.has_log:
         log = algorithm.get_log()
@@ -221,19 +228,20 @@ def log_results(algorithm, dataset, general_logger, epoch, effective_batch_idx):
 def save_pred_if_needed(y_pred, dataset, epoch, config, is_best, force_save=False):
     if config.save_pred:
         prefix = get_pred_prefix(dataset, config)
+        # 按照固定的步长config.save_step保存预测结果
         if force_save or (config.save_step is not None and (epoch + 1) % config.save_step == 0):
-            save_pred(y_pred, prefix + f'epoch:{epoch}_pred')
+            save_pred(y_pred, prefix + f'epoch_{epoch}_pred')
         if (not force_save) and config.save_last:
-            save_pred(y_pred, prefix + f'epoch:last_pred')
+            save_pred(y_pred, prefix + f'epoch_last_pred')
         if config.save_best and is_best:
-            save_pred(y_pred, prefix + f'epoch:best_pred')
+            save_pred(y_pred, prefix + f'epoch_best_pred')
 
 
 def save_model_if_needed(algorithm, dataset, epoch, config, is_best, best_val_metric):
     prefix = get_model_prefix(dataset, config)
     if config.save_step is not None and (epoch + 1) % config.save_step == 0:
-        save_model(algorithm, epoch, best_val_metric, prefix + f'epoch:{epoch}_model.pth')
+        save_model(algorithm, epoch, best_val_metric, prefix + f'epoch_{epoch}_model.pth')
     if config.save_last:
-        save_model(algorithm, epoch, best_val_metric, prefix + 'epoch:last_model.pth')
+        save_model(algorithm, epoch, best_val_metric, prefix + 'epoch_last_model.pth')
     if config.save_best and is_best:
-        save_model(algorithm, epoch, best_val_metric, prefix + 'epoch:best_model.pth')
+        save_model(algorithm, epoch, best_val_metric, prefix + 'epoch_best_model.pth')

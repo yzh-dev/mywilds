@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import torch
 
 from algorithms.group_algorithm import GroupAlgorithm
@@ -136,14 +137,15 @@ class SingleModelAlgorithm(GroupAlgorithm):
         assert self.is_training
 
         # process this batch
+        # 处理批量数据，得到模型输出（由各个具体算法实现自己的process_batch函数）
         results = self.process_batch(batch, unlabeled_batch)
 
-        # update running statistics and update model if we've reached end of effective batch
+        # 计算目标loss函数并进行梯度反传
         self._update(
             results,
             should_step=(((self.batch_idx + 1) % self.gradient_accumulation_steps == 0) or (is_epoch_end))
         )
-        self.update_log(results)
+        self.update_log(results)#这个函数的作用不是很清楚
 
         # iterate batch index
         if is_epoch_end:
@@ -152,7 +154,7 @@ class SingleModelAlgorithm(GroupAlgorithm):
             self.batch_idx += 1
 
         # return only this batch's results
-        return self.sanitize_dict(results)
+        return self.sanitize_dict(results)#Given a nested dictionary, ensures that all nested dicts are normal Python dicts.
 
     def _update(self, results, should_step=False):
         """
@@ -160,17 +162,17 @@ class SingleModelAlgorithm(GroupAlgorithm):
         Also updates the results dictionary yielded by process_batch().
         Should be overridden to change algorithm update beyond modifying the objective.
         """
-        # compute objective
+        # 计算目标loss函数
         objective = self.objective(results)
         results['objective'] = objective.item()
-        objective.backward()
+        objective.backward()# 反向传播
 
         # update model and logs based on effective batch
-        if should_step:
+        if should_step:#更新模型参数
             if self.max_grad_norm:
                 clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
             self.optimizer.step()
-            self.step_schedulers(
+            self.step_schedulers(#按照scheduler调整lr
                 is_epoch=False,
                 metrics=self.log_dict,
                 log_access=False)

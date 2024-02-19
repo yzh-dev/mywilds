@@ -29,7 +29,7 @@ def initialize_model(config, d_out, is_featurizer=False):
     # then split into (featurizer, classifier) for the purposes of loading only the featurizer,
     # before recombining them at the end
     featurize = is_featurizer or config.load_featurizer_only
-
+    # 对于wildcam数据集，默认的主干网络是resnet50
     if config.model in ('resnet18', 'resnet34', 'resnet50', 'resnet101', 'wideresnet50', 'densenet121'):
         if featurize:
             featurizer = initialize_torchvision_model(
@@ -104,8 +104,9 @@ def initialize_model(config, d_out, is_featurizer=False):
             model = initialize_fasterrcnn_model(config, d_out)
         model.needs_y = True
 
-    else:
-        raise ValueError(f'Model: {config.model} not recognized.')
+    else:#调试时总是跳转到该行
+        # raise ValueError(f'Model: {config.model} not recognized.')
+        pass
 
     # Load pretrained weights from disk using our utils.load function
     if config.pretrained_model_path is not None:

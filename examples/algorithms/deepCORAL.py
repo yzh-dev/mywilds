@@ -4,6 +4,7 @@ from algorithms.single_model_algorithm import SingleModelAlgorithm
 from wilds.common.utils import split_into_groups
 from utils import concat_input
 
+
 class DeepCORAL(SingleModelAlgorithm):
     """
     Deep CORAL.
@@ -25,6 +26,7 @@ class DeepCORAL(SingleModelAlgorithm):
     The CORAL penalty function below is adapted from DomainBed's implementation:
     https://github.com/facebookresearch/DomainBed/blob/1a61f7ff44b02776619803a1dd12f952528ca531/domainbed/algorithms.py#L539
     """
+
     def __init__(self, config, d_out, grouper, loss, metric, n_train_steps):
         # check config
         assert config.train_loader == 'group'
@@ -44,7 +46,7 @@ class DeepCORAL(SingleModelAlgorithm):
             metric=metric,
             n_train_steps=n_train_steps,
         )
-        # algorithm hyperparameters
+        # penalty_weight超参数
         self.penalty_weight = config.coral_penalty_weight
         # additional logging
         self.logged_fields.append('penalty')
@@ -53,7 +55,7 @@ class DeepCORAL(SingleModelAlgorithm):
         self.classifier = classifier
 
     #     损失函数解释：参考P40 ⭐⭐⭐_22ILCR Extending the WILDS Benchmark for Unsupervised Adaptation.pdf
-
+    # 计算任意两个group之间的coral penalty，参考7. Mean and covars.py文件中的验证方式，与论文中的协方差计算结果相同
     def coral_penalty(self, x, y):
         if x.dim() > 2:
             # featurizers output Tensors of size (batch_size, ..., feature dimensionality).
@@ -61,15 +63,15 @@ class DeepCORAL(SingleModelAlgorithm):
             x = x.view(-1, x.size(-1))
             y = y.view(-1, y.size(-1))
 
-        mean_x = x.mean(0, keepdim=True)
+        mean_x = x.mean(0, keepdim=True)  # group1的均值:[1,feat_out]
         mean_y = y.mean(0, keepdim=True)
-        cent_x = x - mean_x
+        cent_x = x - mean_x  # 归一化,shape:[batch,feat_out]
         cent_y = y - mean_y
-        cova_x = (cent_x.t() @ cent_x) / (len(x) - 1)
+        cova_x = (cent_x.t() @ cent_x) / (len(x) - 1)  # group1的协方差矩阵shape:[feat_out,feat_out]
         cova_y = (cent_y.t() @ cent_y) / (len(y) - 1)
 
-        mean_diff = (mean_x - mean_y).pow(2).mean()
-        cova_diff = (cova_x - cova_y).pow(2).mean()
+        mean_diff = (mean_x - mean_y).pow(2).mean()  # 均值差转化为标量
+        cova_diff = (cova_x - cova_y).pow(2).mean()  # 协方差转化为标量
 
         return mean_diff + cova_diff
 
@@ -88,10 +90,10 @@ class DeepCORAL(SingleModelAlgorithm):
                 - features (Tensor): featurizer output for batch and unlabeled batch
                 - y_pred (Tensor): full model output for batch and unlabeled batch
         """
-        # forward pass
+        # 真实标签
         x, y_true, metadata = batch
-        y_true = y_true.to(self.device)
-        g = self.grouper.metadata_to_group(metadata).to(self.device)
+        y_true = y_true.to(self.device)  # [batch,]
+        g = self.grouper.metadata_to_group(metadata).to(self.device)  # 获取对应的group：[batch,]
 
         results = {
             'g': g,
@@ -104,7 +106,7 @@ class DeepCORAL(SingleModelAlgorithm):
             x = concat_input(x, unlabeled_x)
             unlabeled_g = self.grouper.metadata_to_group(unlabeled_metadata).to(self.device)
             results['unlabeled_g'] = unlabeled_g
-
+        # 前向过程，计算特征和预测值
         x = x.to(self.device)
         features = self.featurizer(x)
         outputs = self.classifier(features)
@@ -114,6 +116,7 @@ class DeepCORAL(SingleModelAlgorithm):
         results['y_pred'] = y_pred
         return results
 
+    # 计算CORAL的损失函数
     def objective(self, results):
         if self.is_training:
             features = results.pop('features')
@@ -123,13 +126,13 @@ class DeepCORAL(SingleModelAlgorithm):
             unique_groups, group_indices, _ = split_into_groups(groups)
             n_groups_per_batch = unique_groups.numel()
 
-            # Compute penalty - perform pairwise comparisons between features of all the groups
+            # 计算两两group之间的coral penalty
             penalty = torch.zeros(1, device=self.device)
             for i_group in range(n_groups_per_batch):
-                for j_group in range(i_group+1, n_groups_per_batch):
+                for j_group in range(i_group + 1, n_groups_per_batch):
                     penalty += self.coral_penalty(features[group_indices[i_group]], features[group_indices[j_group]])
             if n_groups_per_batch > 1:
-                penalty /= (n_groups_per_batch * (n_groups_per_batch-1) / 2) # get the mean penalty
+                penalty /= (n_groups_per_batch * (n_groups_per_batch - 1) / 2)  # get the mean penalty
         else:
             penalty = 0.
 

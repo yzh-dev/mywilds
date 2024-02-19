@@ -7,30 +7,32 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 
+
+# 划分数据集
 def create_split(data_dir, seed):
     np_rng = np.random.default_rng(seed)
 
     # Loading json was adapted from
     # https://www.kaggle.com/ateplyuk/iwildcam2020-pytorch-start
     filename = f'iwildcam2021_train_annotations_final.json'
-    with open(data_dir / filename ) as json_file:
+    with open(data_dir / filename) as json_file:
         data = json.load(json_file)
-
+    # category_id和image_id
     df_annotations = pd.DataFrame({
-         'category_id': [item['category_id'] for item in data['annotations']],
-         'image_id': [item['image_id'] for item in data['annotations']]
+        'category_id': [item['category_id'] for item in data['annotations']],
+        'image_id': [item['image_id'] for item in data['annotations']]
+    })
+    # 获取图片的image_id、location、filename、datetime、frame_num、seq_id
+    df_metadata = pd.DataFrame({
+        'image_id': [item['id'] for item in data['images']],
+        'location': [item['location'] for item in data['images']],
+        'filename': [item['file_name'] for item in data['images']],
+        'datetime': [item['datetime'] for item in data['images']],
+        'frame_num': [item['frame_num'] for item in data['images']],  # this attribute is not used
+        'seq_id': [item['seq_id'] for item in data['images']]  # this attribute is not used
     })
 
-    df_metadata = pd.DataFrame({
-          'image_id': [item['id'] for item in data['images']],
-          'location': [item['location'] for item in data['images']],
-          'filename': [item['file_name'] for item in data['images']],
-          'datetime': [item['datetime'] for item in data['images']],
-          'frame_num': [item['frame_num'] for item in data['images']], # this attribute is not used
-          'seq_id': [item['seq_id'] for item in data['images']] # this attribute is not used
-      })
-
-
+    # 按照image_id合并两个dataframe，合并方式为inner（即两个表公有的image_id才会进行拼接）
     df = df_metadata.merge(df_annotations, on='image_id', how='inner')
 
     # Create category_id to name dictionary
@@ -47,36 +49,36 @@ def create_split(data_dir, seed):
     grouped_by = df.groupby('seq_id')
     nunique_dates = grouped_by['date'].nunique()
     seq_ids_that_span_across_days = nunique_dates[nunique_dates.values > 1].reset_index()['seq_id'].values
-
+    # 按照location划分数据集
     # Split by location to get the cis & trans validation set
     locations = np.unique(df['location'])
     n_locations = len(locations)
-    frac_val_locations = 0.10
-    frac_test_locations = 0.15
+    frac_val_locations = 0.10  # 0.1的location作为OOD val集
+    frac_test_locations = 0.15  # 0.15的location作为OOD test集
     n_val_locations = int(frac_val_locations * n_locations)
     n_test_locations = int(frac_test_locations * n_locations)
     n_train_locations = n_locations - n_val_locations - n_test_locations
 
-    np_rng.shuffle(locations) # Shuffle, then split
-    train_locations, val_trans_locations = locations[:n_train_locations], locations[n_train_locations:(n_train_locations+n_val_locations)]
-    test_trans_locations = locations[(n_train_locations+n_val_locations):]
-
+    np_rng.shuffle(locations)  # Shuffle, then split
+    train_locations, val_trans_locations = locations[:n_train_locations], locations[n_train_locations:(
+                n_train_locations + n_val_locations)]
+    test_trans_locations = locations[(n_train_locations + n_val_locations):]
 
     remaining_df, val_trans_df = df[df['location'].isin(train_locations)], df[df['location'].isin(val_trans_locations)]
     test_trans_df = df[df['location'].isin(test_trans_locations)]
 
     # Split remaining samples by dates to get the cis validation and test set
-    frac_validation = 0.07
-    frac_test = 0.09
+    frac_validation = 0.07  # 按照日期0.07的比例作为id_val
+    frac_test = 0.09  # 按照日期0.09的比例作为id_test
     unique_dates = np.unique(remaining_df['date'])
     n_dates = len(unique_dates)
     n_val_dates = int(n_dates * frac_validation)
     n_test_dates = int(n_dates * frac_test)
     n_train_dates = n_dates - n_val_dates - n_test_dates
 
-    np_rng.shuffle(unique_dates) # Shuffle, then split
-    train_dates, val_cis_dates = unique_dates[:n_train_dates], unique_dates[n_train_dates:(n_train_dates+n_val_dates)]
-    test_cis_dates = unique_dates[(n_train_dates+n_val_dates):]
+    np_rng.shuffle(unique_dates)  # Shuffle, then split
+    train_dates, val_cis_dates = unique_dates[:n_train_dates], unique_dates[n_train_dates:(n_train_dates + n_val_dates)]
+    test_cis_dates = unique_dates[(n_train_dates + n_val_dates):]
 
     val_cis_df = remaining_df[remaining_df['date'].isin(val_cis_dates)]
     test_cis_df = remaining_df[remaining_df['date'].isin(test_cis_dates)]
@@ -113,7 +115,9 @@ def create_split(data_dir, seed):
             assert n_splits == 1, "Each sequence should only be in one split. Please move manually"
 
     # Reset index
-    train_df.reset_index(inplace=True, drop=True), val_cis_df.reset_index(inplace=True, drop=True), val_trans_df.reset_index(inplace=True, drop=True)
+    train_df.reset_index(inplace=True, drop=True), val_cis_df.reset_index(inplace=True,
+                                                                          drop=True), val_trans_df.reset_index(
+        inplace=True, drop=True)
     test_cis_df.reset_index(inplace=True, drop=True), test_trans_df.reset_index(inplace=True, drop=True)
 
     print("n train: ", len(train_df))
@@ -140,36 +144,37 @@ def create_split(data_dir, seed):
 
     # Create y to category name map and save
     categories_df = pd.DataFrame({
-          'category_id': [item['id'] for item in data['categories']],
-          'name': [item['name'] for item in data['categories']]
-      })
-
-    categories_df['y'] = categories_df['category_id'].apply(lambda x: category_to_label[x] if x in category_to_label else 99999)
+        'category_id': [item['id'] for item in data['categories']],
+        'name': [item['name'] for item in data['categories']]
+    })
+    # 数据集中不存在的类别标签设置为99999
+    categories_df['y'] = categories_df['category_id'].apply(
+        lambda x: category_to_label[x] if x in category_to_label else 99999)
     categories_df = categories_df.sort_values('y').reset_index(drop=True)
-    categories_df = categories_df[['y','category_id','name']]
+    categories_df = categories_df[['y', 'category_id', 'name']]
 
-    # Create remapped location id such that they are contigious
+    # Create remapped location id such that they are contiguous
     location_ids = df['location']
     locations = np.unique(location_ids)
-    n_groups = len(locations)
+    n_groups = len(locations)  # 总共323个地点
     location_to_group_id = {locations[i]: i for i in range(n_groups)}
-    df['location_remapped' ] = df['location'].apply(lambda x: location_to_group_id[x])
+    df['location_remapped'] = df['location'].apply(lambda x: location_to_group_id[x])
 
-    # Create remapped sequence id such that they are contigious
+    # Create remapped sequence id such that they are contiguous
     sequence_ids = df['seq_id']
     sequences = np.unique(sequence_ids)
     n_sequences = len(sequences)
     sequence_to_normalized_id = {sequences[i]: i for i in range(n_sequences)}
-    df['sequence_remapped' ] = df['seq_id'].apply(lambda x: sequence_to_normalized_id[x])
-
+    df['sequence_remapped'] = df['seq_id'].apply(lambda x: sequence_to_normalized_id[x])
 
     # Make sure there's no overlap
     for split_df in [val_cis_df, val_trans_df, test_cis_df, test_trans_df]:
         assert not check_overlap(train_df, split_df)
 
-    # Save
-    df = df.sort_values(['split','location_remapped', 'sequence_remapped','datetime']).reset_index(drop=True)
-    cols = ['split', 'location_remapped', 'location', 'sequence_remapped', 'seq_id',  'y', 'category_id', 'datetime', 'filename', 'image_id']
+    # 按照split, location_remapped, sequence_remapped, datetime排序
+    df = df.sort_values(['split', 'location_remapped', 'sequence_remapped', 'datetime']).reset_index(drop=True)
+    cols = ['split', 'location_remapped', 'location', 'sequence_remapped', 'seq_id', 'y', 'category_id', 'datetime',
+            'filename', 'image_id']
     df[cols].to_csv(data_dir / 'metadata.csv')
     categories_df.to_csv(data_dir / 'categories.csv', index=False)
 
@@ -183,10 +188,9 @@ def check_overlap(df1, df2, column='filename'):
     return False if n_intersection == 0 else True
 
 
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data_dir', type=str)
+    parser.add_argument('--data_dir', default="D:\ML\Dataset\iwildcamDataset\iwildcam_v2.0", type=str)
     args = parser.parse_args()
 
     create_split(Path(args.data_dir), seed=0)

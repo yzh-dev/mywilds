@@ -47,7 +47,8 @@ def main():
 
     # 数据集名称、算法、数据所在根目录
     parser.add_argument('-d', '--dataset', default="iwildcam", choices=wilds.supported_datasets)
-    parser.add_argument('--algorithm', default="ERM", choices=supported.algorithms)
+    # 算法默认为ERM，支持的算法有ERM、deepCORAL、GroupDRO、IRM、Mixup、RSC、SD等
+    parser.add_argument('--algorithm', default="IRM", choices=supported.algorithms)
     parser.add_argument('--root_dir', default="D:\ML\Dataset\iwildcamDataset",
                         help='The directory where [dataset]/data can be found (or should be downloaded to, if it does not exist).')
 
@@ -58,7 +59,7 @@ def main():
                         help='keyword arguments for dataset initialization passed as key1=value1 key2=value2')
     parser.add_argument('--download', default=False, type=parse_bool, const=True, nargs='?',
                         help='If true, tries to download the dataset if it does not exist in root_dir.')
-    # 默认1.0，调试阶段暂时将数据规模缩小到0.0005
+    # 默认1.0，调试阶段暂时将数据规模缩小到0.001
     parser.add_argument('--frac', type=float, default=0.001,
                         help='Convenience parameter that scales all dataset splits down to the specified fraction, for development purposes. Note that this also scales the test set down, so the reported numbers are not comparable with the full test set.')
     parser.add_argument('--version', default=None, type=str, help='WILDS labeled dataset version number.')
@@ -75,8 +76,8 @@ def main():
     parser.add_argument('--loader_kwargs', nargs='*', action=ParseKwargs, default={})
     parser.add_argument('--unlabeled_loader_kwargs', nargs='*', action=ParseKwargs, default={})
     # train_loader默认采用standard，修改为group进行调试
-    parser.add_argument('--train_loader', default='standard', choices=['standard', 'group'])
-    # uniform_over_groups默认为None，修改为True，const=True是什么意思
+    parser.add_argument('--train_loader', default='group', choices=['standard', 'group'])
+    # uniform_over_groups默认为None，不指定任何参数时取值为const=True
     parser.add_argument('--uniform_over_groups', type=parse_bool, const=True, nargs='?',
                         help='If true, sample examples such that batches are uniform over groups.')
     parser.add_argument('--distinct_groups', type=parse_bool, const=True, nargs='?',
